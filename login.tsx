@@ -32,9 +32,14 @@ export default function LoginScreen() {
 
     setIsLoading(true);
     try {
-      await login(email, password);
-      // After login, user needs to verify OTP
-      router.push('/(auth)/verify-otp');
+      const result = await login(email.trim().toLowerCase(), password);
+      // Backend tells us whether OTP is required (false for reviewer bypass accounts).
+      const otpRequired = result?.user?.otp_required !== false;
+      if (otpRequired) {
+        router.replace('/(auth)/verify-otp');
+      } else {
+        router.replace('/(tabs)');
+      }
     } catch (error: any) {
       Alert.alert('Login Failed', error.message || 'Please try again');
     } finally {
@@ -74,6 +79,9 @@ export default function LoginScreen() {
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoComplete="email"
+                  autoCorrect={false}
+                  spellCheck={false}
+                  textContentType="emailAddress"
                 />
               </View>
             </View>
@@ -205,6 +213,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     fontSize: 16,
     color: '#FFFFFF',
+    letterSpacing: 0,
   },
   eyeIcon: {
     padding: 12,

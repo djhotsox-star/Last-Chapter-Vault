@@ -192,6 +192,9 @@ export default function RegisterScreen() {
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoComplete="email"
+                  autoCorrect={false}
+                  spellCheck={false}
+                  textContentType="emailAddress"
                 />
               </View>
             </View>

@@ -21,7 +21,7 @@ const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 export default function AddFarewellVideoScreen() {
   const router = useRouter();
-  const { accessToken } = useAuth();
+  const { apiFetch } = useAuth();
   
   const [title, setTitle] = useState('My Final Message');
   const [description, setDescription] = useState('');
@@ -96,11 +96,10 @@ export default function AddFarewellVideoScreen() {
 
     setIsUploading(true);
     try {
-      const response = await fetch(`${API_URL}/api/farewell-video`, {
+      const response = await apiFetch('/api/farewell-video', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
           title: title.trim(),

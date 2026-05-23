@@ -82,6 +82,16 @@ export default function VerifyOTPScreen() {
         style={styles.keyboardView}
       >
         <View style={styles.content}>
+          {/* Back button — lets user escape if they entered the wrong email */}
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.replace('/(auth)/login')}
+            accessibilityLabel="Back to sign in"
+          >
+            <Ionicons name="chevron-back" size={28} color="#FFFFFF" />
+            <Text style={styles.backButtonText}>Back to sign in</Text>
+          </TouchableOpacity>
+
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.iconContainer}>
@@ -95,16 +105,7 @@ export default function VerifyOTPScreen() {
             <Text style={styles.hint}>Check your email and enter the code below</Text>
           </View>
 
-          {/* Dev OTP Banner - shown when Twilio is not configured */}
-          {devOtp && (
-            <View style={styles.devOtpBanner}>
-              <Ionicons name="key" size={20} color="#FF9800" />
-              <View style={styles.devOtpContent}>
-                <Text style={styles.devOtpLabel}>Dev Mode - Your OTP Code:</Text>
-                <Text style={styles.devOtpCode}>{devOtp}</Text>
-              </View>
-            </View>
-          )}
+          {/* Dev OTP Banner — REMOVED for production: was leaking OTP codes on screen */}
 
           {/* OTP Input */}
           <View style={styles.otpContainer}>
@@ -148,6 +149,16 @@ export default function VerifyOTPScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Wrong-email escape hatch — second visible exit in case the back button is missed */}
+          <TouchableOpacity
+            onPress={() => router.replace('/(auth)/login')}
+            style={styles.wrongEmailButton}
+          >
+            <Text style={styles.wrongEmailText}>
+              Wrong email? Go back to sign in
+            </Text>
+          </TouchableOpacity>
+
           {/* Info Box */}
           <View style={styles.infoBox}>
             <Ionicons name="information-circle" size={20} color="#4A90E2" />
@@ -172,7 +183,32 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 24,
-    paddingTop: 60,
+    paddingTop: 20,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingVertical: 8,
+    paddingRight: 12,
+    marginBottom: 8,
+  },
+  backButtonText: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  wrongEmailButton: {
+    alignSelf: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 24,
+  },
+  wrongEmailText: {
+    fontSize: 14,
+    color: '#4A90E2',
+    fontWeight: '600',
   },
   header: {
     alignItems: 'center',

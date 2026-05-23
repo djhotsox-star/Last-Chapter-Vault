@@ -31,7 +31,7 @@ const CATEGORIES = [
 export default function AddDocumentScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { accessToken } = useAuth();
+  const { apiFetch } = useAuth();
   
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -46,11 +46,10 @@ export default function AddDocumentScreen() {
 
     setIsUploading(true);
     try {
-      const response = await fetch(`${API_URL}/api/documents`, {
+      const response = await apiFetch('/api/documents', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
           title: title.trim(),

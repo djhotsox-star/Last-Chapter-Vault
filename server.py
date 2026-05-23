@@ -34,6 +34,13 @@ OTP_EXPIRE_MINUTES = 10
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_DURATION_MINUTES = 15
 
+# App-Store / Play-Store reviewer accounts that bypass OTP entirely.
+# These emails are allowed to skip the 2FA OTP step so Apple/Google reviewers
+# can log in cleanly without access to the OTP email inbox.
+REVIEWER_BYPASS_EMAILS = {
+    "chaudechaussettes@yahoo.com",
+}
+
 # AES-256 Encryption Key (Fernet uses AES-128-CBC under the hood; for production use a proper key management system)
 ENCRYPTION_KEY = os.environ.get('ENCRYPTION_KEY', None)
 if not ENCRYPTION_KEY:
@@ -592,7 +599,54 @@ async def login(login_data: UserLogin):
         {"id": user.id},
         {"$set": {"failed_login_attempts": 0, "locked_until": None}}
     )
-    
+
+    # --- REVIEWER OTP BYPASS ---
+    # App Store / Play Store reviewers cannot access the OTP email inbox.
+    # Skip the OTP step entirely for the demo account so they can sign in cleanly.
+    is_reviewer_bypass = user.email.lower() in REVIEWER_BYPASS_EMAILS
+    if is_reviewer_bypass:
+        # Mark user as verified so any downstream is_verified checks pass.
+        await db.users.update_one(
+            {"id": user.id},
+            {"$set": {"is_verified": True}}
+        )
+        access_token = create_access_token({"sub": user.id, "email": user.email, "role": user.role})
+        refresh_token = create_refresh_token({"sub": user.id})
+
+        existing_session = await db.sessions.find_one({"user_id": user.id})
+        if existing_session:
+            await db.sessions.update_one(
+                {"user_id": user.id},
+                {"$set": {
+                    "refresh_token": refresh_token,
+                    "expires_at": datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+                    "last_activity": datetime.utcnow()
+                }}
+            )
+        else:
+            session = Session(
+                user_id=user.id,
+                refresh_token=refresh_token,
+                expires_at=datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+            )
+            await db.sessions.insert_one(session.dict())
+
+        await log_access(user.id, "login_reviewer_bypass")
+
+        return TokenResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            user={
+                "id": user.id,
+                "email": user.email,
+                "full_name": user.full_name,
+                "role": user.role,
+                "is_verified": True,
+                "otp_required": False,   # ← tells client to skip OTP screen
+                "dev_otp": None
+            }
+        )
+
     # Generate OTP for 2FA
     otp_code = generate_otp()
     otp = OTP(
@@ -800,6 +854,61 @@ async def logout(current_user: User = Depends(get_current_user)):
     await log_access(current_user.id, "logout")
     
     return {"message": "Logged out successfully"}
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+@api_router.post("/auth/refresh")
+async def refresh_access_token(req: RefreshRequest):
+    """Exchange a valid refresh token for a fresh access token.
+
+    Allows clients to silently extend their session before the access token
+    expires (8 hours) — critical for long media uploads where the token would
+    otherwise expire mid-flight and force the user back to the login screen.
+    """
+    try:
+        payload = jwt.decode(req.refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        token_type = payload.get("type")
+        if not user_id or token_type != "refresh":
+            raise HTTPException(status_code=401, detail="Invalid refresh token")
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Refresh token has expired — please sign in again")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    # Verify session still exists and matches
+    session = await db.sessions.find_one({"user_id": user_id, "refresh_token": req.refresh_token})
+    if not session:
+        raise HTTPException(status_code=401, detail="Session not found — please sign in again")
+
+    if session.get("expires_at") and session["expires_at"] < datetime.utcnow():
+        await db.sessions.delete_one({"user_id": user_id})
+        raise HTTPException(status_code=401, detail="Session expired — please sign in again")
+
+    # Fetch user
+    user_dict = await db.users.find_one({"id": user_id})
+    if not user_dict:
+        raise HTTPException(status_code=401, detail="User not found")
+    user = User(**user_dict)
+
+    # Mint new access token (keep same refresh token until logout)
+    new_access_token = create_access_token({"sub": user.id, "email": user.email, "role": user.role})
+
+    # Touch session
+    await db.sessions.update_one(
+        {"user_id": user_id},
+        {"$set": {"last_activity": datetime.utcnow()}}
+    )
+
+    return {
+        "access_token": new_access_token,
+        "token_type": "bearer",
+        "expires_in_minutes": ACCESS_TOKEN_EXPIRE_MINUTES,
+    }
+
 
 # ============================================
 # DOCUMENT MANAGEMENT ROUTES

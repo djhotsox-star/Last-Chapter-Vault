@@ -26,6 +26,8 @@ interface AuthContextType {
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  refreshAccessToken: () => Promise<string | null>;
+  apiFetch: (input: string, init?: RequestInit) => Promise<Response>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -239,6 +241,68 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  /**
+   * Exchange the stored refresh token for a fresh access token.
+   * Returns the new access token on success, or null if the refresh
+   * token is also expired/invalid (caller should redirect to login).
+   */
+  const refreshAccessToken = async (): Promise<string | null> => {
+    try {
+      const storedRefresh = await secureStorage.getItem('refreshToken');
+      if (!storedRefresh) return null;
+
+      const response = await fetch(`${API_URL}/api/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: storedRefresh }),
+      });
+
+      if (!response.ok) {
+        // Refresh token is dead — force re-login
+        await secureStorage.deleteItem('accessToken');
+        await secureStorage.deleteItem('refreshToken');
+        setUser(null);
+        setAccessToken(null);
+        return null;
+      }
+
+      const data = await response.json();
+      const newToken: string = data.access_token;
+      await secureStorage.setItem('accessToken', newToken);
+      setAccessToken(newToken);
+      return newToken;
+    } catch (error) {
+      console.error('Token refresh error:', error);
+      return null;
+    }
+  };
+
+  /**
+   * Authenticated fetch wrapper that automatically refreshes the access token
+   * once on 401 and retries the request. Critical for long uploads (farewell
+   * videos, photos) so the user is never booted mid-upload when the 8-hour
+   * access token expires.
+   */
+  const apiFetch = async (input: string, init: RequestInit = {}): Promise<Response> => {
+    const url = input.startsWith('http') ? input : `${API_URL}${input}`;
+    const headers = new Headers(init.headers || {});
+    if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+
+    let response = await fetch(url, { ...init, headers });
+
+    if (response.status === 401) {
+      // Try refreshing once
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        const retryHeaders = new Headers(init.headers || {});
+        retryHeaders.set('Authorization', `Bearer ${newToken}`);
+        response = await fetch(url, { ...init, headers: retryHeaders });
+      }
+    }
+
+    return response;
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -254,6 +318,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         logout,
         checkAuth,
         refreshUser,
+        refreshAccessToken,
+        apiFetch,
       }}
     >
       {children}

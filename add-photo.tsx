@@ -20,7 +20,7 @@ const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 export default function AddPhotoScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { accessToken } = useAuth();
+  const { apiFetch } = useAuth();
   
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -34,11 +34,10 @@ export default function AddPhotoScreen() {
 
     setIsUploading(true);
     try {
-      const response = await fetch(`${API_URL}/api/photos`, {
+      const response = await apiFetch('/api/photos', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
           title: title.trim(),
